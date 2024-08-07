@@ -4,51 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Car Driving Game</title>
-    <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-            font-family: Arial, sans-serif;
-        }
-        #gameContainer {
-            position: relative;
-        }
-        canvas {
-            border: 2px solid black;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        #menu {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            color: white;
-        }
-        #menu button {
-            margin: 10px;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
 </head>
 <body>
     <div id="gameContainer">
         <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="hud"></div>
         <div id="menu">
             <h1>Car Driving Game</h1>
             <button id="startButton">Start Game</button>
             <button id="instructionsButton">Instructions</button>
+            <button id="highScoresButton">High Scores</button>
+        </div>
+        <div id="gameOverScreen" style="display: none;">
+            <h2>Game Over</h2>
+            <p id="finalScore"></p>
+            <p id="finalLevel"></p>
+            <input type="text" id="playerName" placeholder="Enter your name">
+            <button id="submitScoreButton">Submit Score</button>
+            <button id="restartButton">Restart Game</button>
+            <button id="menuButton">Back to Menu</button>
         </div>
     </div>
-    <script src="game.js"></script>
+    <script type="module" src="/main.js"></script>
 </body>
 </html>

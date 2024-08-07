@@ -1,8 +1,14 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const menu = document.getElementById('menu');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const hud = document.getElementById('hud');
 const startButton = document.getElementById('startButton');
 const instructionsButton = document.getElementById('instructionsButton');
+const highScoresButton = document.getElementById('highScoresButton');
+const submitScoreButton = document.getElementById('submitScoreButton');
+const restartButton = document.getElementById('restartButton');
+const menuButton = document.getElementById('menuButton');
 
 const car = {
     x: 400,
@@ -12,8 +18,12 @@ const car = {
     speed: 5,
     dx: 0,
     dy: 0,
-    color: 'red'
+    color: 'red',
+    fuel: 100,
+    image: new Image()
 };
+
+car.image.src = 'https://example.com/car.png'; // Replace with actual car image URL
 
 const road = {
     x: 150,
@@ -27,38 +37,36 @@ const road = {
 
 const obstacles = [];
 const powerUps = [];
+const particles = [];
 
 let score = 0;
 let gameOver = false;
 let level = 1;
 let obstacleSpeed = 2;
 let obstacleFrequency = 0.02;
-let gameState = 'menu'; // 'menu', 'playing', 'gameOver'
+let gameState = 'menu';
+let lastTime = 0;
+let fuelConsumptionRate = 0.1;
+let highScores = JSON.parse(localStorage.getItem('highScores')) || [];
 
 const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
 
-// Sound effects
 const sounds = {
     background: new Audio('https://example.com/background.mp3'),
     collision: new Audio('https://example.com/collision.mp3'),
-    powerUp: new Audio('https://example.com/powerup.mp3')
+    powerUp: new Audio('https://example.com/powerup.mp3'),
+    fuelLow: new Audio('https://example.com/fuel_low.mp3')
 };
 
 sounds.background.loop = true;
 
 function drawCar() {
-    ctx.fillStyle = car.color;
-    ctx.fillRect(car.x, car.y, car.width, car.height);
-    
-    ctx.fillStyle = 'black';
-    ctx.fillRect(car.x + 10, car.y + 10, 10, 20);
-    ctx.fillRect(car.x + 30, car.y + 10, 10, 20);
-    ctx.fillRect(car.x + 5, car.y + 60, 40, 15);
-    
-    ctx.beginPath();
-    ctx.arc(car.x + 10, car.y + 70, 8, 0, Math.PI * 2);
-    ctx.arc(car.x + 40, car.y + 70, 8, 0, Math.PI * 2);
-    ctx.fill();
+    if (car.image.complete) {
+        ctx.drawImage(car.image, car.x, car.y, car.width, car.height);
+    } else {
+        ctx.fillStyle = car.color;
+        ctx.fillRect(car.x, car.y, car.width, car.height);
+    }
 }
 
 function drawRoad() {
@@ -86,13 +94,15 @@ function createObstacle() {
 }
 
 function createPowerUp() {
+    const types = ['speed', 'invincibility', 'fuel'];
+    const type = types[Math.floor(Math.random() * types.length)];
     const powerUp = {
         x: Math.random() * (road.width - 30) + road.x,
         y: -30,
         width: 30,
         height: 30,
         speed: 2,
-        type: Math.random() < 0.5 ? 'speed' : 'invincibility'
+        type: type
     };
     powerUps.push(powerUp);
 }
@@ -106,24 +116,24 @@ function drawObstacles() {
 
 function drawPowerUps() {
     powerUps.forEach(powerUp => {
-        ctx.fillStyle = powerUp.type === 'speed' ? 'gold' : 'silver';
+        ctx.fillStyle = powerUp.type === 'speed' ? 'gold' : powerUp.type === 'invincibility' ? 'silver' : 'green';
         ctx.beginPath();
         ctx.arc(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, powerUp.width / 2, 0, Math.PI * 2);
         ctx.fill();
     });
 }
 
-function moveObstacles() {
+function moveObstacles(deltaTime) {
     obstacles.forEach(obstacle => {
-        obstacle.y += obstacle.speed;
+        obstacle.y += obstacle.speed * (deltaTime / 16);
     });
     
     obstacles = obstacles.filter(obstacle => obstacle.y < canvas.height);
 }
 
-function movePowerUps() {
+function movePowerUps(deltaTime) {
     powerUps.forEach(powerUp => {
-        powerUp.y += powerUp.speed;
+        powerUp.y += powerUp.speed * (deltaTime / 16);
     });
     
     powerUps = powerUps.filter(powerUp => powerUp.y < canvas.height);
@@ -139,6 +149,7 @@ function checkCollision() {
         ) {
             sounds.collision.play();
             gameState = 'gameOver';
+            showGameOverScreen();
         }
     }
 
@@ -157,15 +168,18 @@ function checkCollision() {
             } else if (powerUp.type === 'invincibility') {
                 car.color = 'rgba(255, 255, 255, 0.5)';
                 setTimeout(() => car.color = 'red', 5000);
+            } else if (powerUp.type === 'fuel') {
+                car.fuel = Math.min(car.fuel + 30, 100);
             }
             powerUps.splice(i, 1);
+            createParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2);
         }
     }
 }
 
-function moveCar() {
-    car.x += car.dx;
-    car.y += car.dy;
+function moveCar(deltaTime) {
+    car.x += car.dx * (deltaTime / 16);
+    car.y += car.dy * (deltaTime / 16);
 
     if (car.x < road.x) car.x = road.x;
     if (car.x + car.width > road.x + road.width) car.x = road.x + road.width - car.width;
@@ -188,26 +202,14 @@ function handleKeyUp(e) {
 document.addEventListener('keydown', handleKeyDown);
 document.addEventListener('keyup', handleKeyUp);
 
-function drawScore() {
-    ctx.fillStyle = 'black';
-    ctx.font = '20px Arial';
-    ctx.fillText(`Score: ${score}`, 20, 30);
-    ctx.fillText(`Level: ${level}`, 20, 60);
+function drawHUD() {
+    hud.innerHTML = `Score: ${score}<br>Level: ${level}<br>Fuel: ${Math.round(car.fuel)}%`;
 }
 
-function drawGameOver() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.fillStyle = 'white';
-    ctx.font = '48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2);
-    
-    ctx.font = '24px Arial';
-    ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 50);
-    ctx.fillText(`Level Reached: ${level}`, canvas.width / 2, canvas.height / 2 + 80);
-    ctx.fillText('Press Space to Restart', canvas.width / 2, canvas.height / 2 + 130);
+function showGameOverScreen() {
+    gameOverScreen.style.display = 'block';
+    document.getElementById('finalScore').textContent = `Final Score: ${score}`;
+    document.getElementById('finalLevel').textContent = `Level Reached: ${level}`;
 }
 
 function restartGame() {
@@ -217,8 +219,10 @@ function restartGame() {
     car.dy = 0;
     car.color = 'red';
     car.speed = 5;
+    car.fuel = 100;
     obstacles.length = 0;
     powerUps.length = 0;
+    particles.length = 0;
     score = 0;
     level = 1;
     obstacleSpeed = 2;
@@ -226,6 +230,7 @@ function restartGame() {
     gameState = 'playing';
     sounds.background.currentTime = 0;
     sounds.background.play();
+    gameOverScreen.style.display = 'none';
 }
 
 function updateDifficulty() {
@@ -233,6 +238,7 @@ function updateDifficulty() {
         level++;
         obstacleSpeed += 0.5;
         obstacleFrequency += 0.005;
+        fuelConsumptionRate += 0.02;
     }
 }
 
@@ -248,62 +254,154 @@ function showInstructions() {
     ctx.fillText('Avoid obstacles and collect power-ups', canvas.width / 2, 200);
     ctx.fillText('Gold power-ups: Speed boost', canvas.width / 2, 250);
     ctx.fillText('Silver power-ups: Temporary invincibility', canvas.width / 2, 300);
-    ctx.fillText('Press Space to return to menu', canvas.width / 2, 400);
+    ctx.fillText('Green power-ups: Refuel', canvas.width / 2, 350);
+    ctx.fillText('Watch your fuel level!', canvas.width / 2, 400);
+    ctx.fillText('Press Space to return to menu', canvas.width / 2, 450);
 }
 
-function gameLoop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function showHighScores() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('High Scores', canvas.width / 2, 100);
+    
+    highScores.sort((a, b) => b.score - a.score);
+    highScores.slice(0, 5).forEach((score, index) => {
+        ctx.fillText(`${index + 1}. ${score.name}: ${score.score}`, canvas.width / 2, 150 + index * 50);
+    });
+    
+    ctx.fillText('Press Space to return to menu', canvas.width / 2, 450);
+}
+
+function createParticles(x, y) {
+    for (let i = 0; i < 20; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            size: Math.random() * 5 + 1,
+            speedX: Math.random() * 4 - 2,
+            speedY: Math.random() * 4 - 2,
+            color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+            life: 30
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const particle = particles[i];
+        particle.x += particle.speedX;
+        particle.y += particle.speedY;
+        particle.life--;
+        
+        if (particle.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function drawParticles() {
+    particles.forEach(particle => {
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function consumeFuel(deltaTime) {
+    car.fuel -= fuelConsumptionRate * (deltaTime / 16);
+    if (car.fuel <= 0) {
+        gameState = 'gameOver';
+        showGameOverScreen();
+    } else if (car.fuel <= 20 && !sounds.fuelLow.playing) {
+        sounds.fuelLow.play();
+    }
+}
+
+function updateGame(currentTime) {
+    const deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
 
     if (gameState === 'playing') {
-        drawRoad();
-        moveCar();
-        moveObstacles();
-        movePowerUps();
-        drawObstacles();
-        drawPowerUps();
-        drawCar();
+        moveCar(deltaTime);
+        moveObstacles(deltaTime);
+        movePowerUps(deltaTime);
         checkCollision();
-        drawScore();
-        
-        score++;
+        consumeFuel(deltaTime);
         updateDifficulty();
-        
+        updateParticles();
+
         if (Math.random() < obstacleFrequency) {
             createObstacle();
         }
-        
-        if (Math.random() < 0.001) {
+
+        if (Math.random() < 0.005) {
             createPowerUp();
         }
-    } else if (gameState === 'gameOver') {
-        drawGameOver();
-    } else if (gameState === 'instructions') {
-        showInstructions();
+
+        score++;
     }
 
-    requestAnimationFrame(gameLoop);
+    drawGame();
+    requestAnimationFrame(updateGame);
 }
 
-startButton.addEventListener('click', () => {
-    menu.style.display = 'none';
+function drawGame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === 'menu') {
+        menu.style.display = 'block';
+        canvas.style.display = 'none';
+        hud.style.display = 'none';
+    } else if (gameState === 'playing') {
+        menu.style.display = 'none';
+        canvas.style.display = 'block';
+        hud.style.display = 'block';
+        drawRoad();
+        drawCar();
+        drawObstacles();
+        drawPowerUps();
+        drawParticles();
+        drawHUD();
+    } else if (gameState === 'instructions') {
+        showInstructions();
+    } else if (gameState === 'highScores') {
+        showHighScores();
+    }
+}
+
+function startGame() {
     gameState = 'playing';
     restartGame();
-});
+    lastTime = performance.now();
+    requestAnimationFrame(updateGame);
+}
 
-instructionsButton.addEventListener('click', () => {
-    menu.style.display = 'none';
-    gameState = 'instructions';
+startButton.addEventListener('click', startGame);
+instructionsButton.addEventListener('click', () => gameState = 'instructions');
+highScoresButton.addEventListener('click', () => gameState = 'highScores');
+submitScoreButton.addEventListener('click', () => {
+    const name = prompt('Enter your name:');
+    if (name) {
+        highScores.push({ name, score });
+        localStorage.setItem('highScores', JSON.stringify(highScores));
+    }
+});
+restartButton.addEventListener('click', startGame);
+menuButton.addEventListener('click', () => {
+    gameState = 'menu';
+    gameOverScreen.style.display = 'none';
 });
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
-        if (gameState === 'gameOver') {
-            restartGame();
-        } else if (gameState === 'instructions') {
-            gameState = 'menu';
-            menu.style.display = 'block';
-        }
+    if (e.code === 'Space' && (gameState === 'instructions' || gameState === 'highScores')) {
+        gameState = 'menu';
     }
 });
 
-gameLoop();
+// Initial setup
+drawGame();
